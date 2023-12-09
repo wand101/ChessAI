@@ -5,4 +5,4 @@ There is also an images folder that contains the visual representations of the c
 
 ## Usage
 
-Open chess.html and you can start playing chess against the AI. Click and drag pieces on the board. Possible moves will be indicated. 
+Open chess.html in a web browser and you can start playing chess against the AI. Click and drag pieces on the board. Possible moves will be indicated. 
