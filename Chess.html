@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Chess AI</title>
+	
+	<style>
+		body {
+			margin: 0;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			height: 100vh;
+			background-color: #f0f0f0;
+		}
+
+		canvas {
+			border: 1px solid #333;
+		}
+	</style>
+</head>
+
+<body>
+	<canvas id="chessboard"></canvas>
+
+	<script>
+
+		const canvas = document.getElementById("chessboard");
+		const ctx = canvas.getContext("2d");
+		const pieceScale = .9;
+
+		let selectedPiece = null;
+		let currentPlayer = 'black'; // Tracks the current player
+		
+		var mousePos = {x: 0, y: 0};
+		var mouseDrag = false;
+		var mouseChange = false;
+		
+		var images = [];
+		for (var i = 0; i < 12; i++) {
+			images[i] = new Image();
+			images[i].src = [
+				"Images/r_black.png",
+				"Images/h_black.png",
+				"Images/b_black.png",
+				"Images/q_black.png",
+				"Images/k_black.png",
+				"Images/p_black.png",
+				"Images/r_white.png",
+				"Images/h_white.png",
+				"Images/b_white.png",
+				"Images/q_white.png",
+				"Images/k_white.png",
+				"Images/p_white.png"
+			][i];
+		}
+		
+		var highlightMoves = [];
+		
+		const chessBoard = initializeChessBoard();
+		//aiMove(chessBoard);
+		//renderChessBoard(chessBoard);
+		
+		function resizeCanvas() {
+			const minSize = Math.min(window.innerWidth, window.innerHeight);
+			canvas.width = minSize * 0.8;
+			canvas.height = canvas.width;
+		}
+		
+		function updateCanvas() {
+			resizeCanvas();
+			renderChessBoard(chessBoard);
+			requestAnimationFrame(updateCanvas);
+			mouseChange = false;
+		}
+		
+		// Sets up the initial chessboard at the start of the game
+		function initializeChessBoard() {
+			// Create an empty 8x8 board
+			let board = Array(8).fill().map(() => Array(8).fill(null));
+
+			// Set up the white pieces
+			const whitePieces = ['R', 'H', 'B', 'K', 'Q', 'B', 'H', 'R'];
+			board[0] = whitePieces.map(type => ({ type: type.toLowerCase(), color: 'white', moved: false }));
+			board[1] = Array(8).fill({ type: 'p', color: 'white', moved: false });
+
+			// Set up empty spaces
+			for (let i = 2; i < 6; i++) {
+				board[i] = Array(8).fill(null);
+			}
+
+			// Set up black pieces
+			const blackPieces = ['r', 'h', 'b', 'k', 'q', 'b', 'h', 'r'];
+			board[6] = Array(8).fill({ type: 'p', color: 'black', moved: false });
+			board[7] = blackPieces.map(type => ({ type: type.toLowerCase(), color: 'black', moved: false }));
+
+			return board;
+		}
+
+		// Construct the chessboard based on its current state
+		function renderChessBoard(board) {
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			ctx.imageSmoothingEnabled = false;
+
+			const squareSize = canvas.width / 8;
+			
+			var mousePos2 = {
+				x: Math.min(Math.max((mousePos.x - canvas.getBoundingClientRect().left) / squareSize, 0.5), 7.5),
+				y: Math.min(Math.max((mousePos.y - canvas.getBoundingClientRect().top) / squareSize, 0.5), 7.5)
+			};
+			
+			var mouseCell = {
+				x: Math.floor(mousePos2.x),
+				y: Math.floor(mousePos2.y)
+			};
+			
+			if (mouseChange) {
+
+				if (mouseDrag) {
+					handleSquarePress(mouseCell.y, mouseCell.x, chessBoard);
+					if (selectedPiece) {
+						highlightMoves = [];
+						for (var i = 0; i < 64; i++) {
+							highlightMoves[i] = checkValidMove(i % 8, Math.floor(i / 8), chessBoard);
+						}
+					}
+				} else {
+					handleSquareRelease(mouseCell.y, mouseCell.x, chessBoard);
+				}
+			}
+			
+			ctx.fillStyle = "#f0d9b5";
+			ctx.fillRect(0, 0, squareSize * 8, squareSize * 8)
+			ctx.fillStyle = "#b58863";
+			for (var i = 0; i < 8; i++) {
+				for (var j = 0; j < 8; j++) {
+					if ((i + j) % 2) {
+						ctx.fillRect(i * squareSize, j * squareSize, squareSize, squareSize);
+					}
+				}
+			}
+			
+			//ctx.fillStyle = "#000000a0";
+			board.forEach((row, rowIndex) => {
+				row.forEach((cell, colIndex) => {
+					if (cell !== null) {
+						if (!selectedPiece || selectedPiece.rowIndex != rowIndex || selectedPiece.colIndex != colIndex) {
+							const pieceIndex = getPieceIndex(cell.type, cell.color);
+							ctx.drawImage(images[pieceIndex], squareSize * (colIndex + .5 - pieceScale / 2), squareSize * (rowIndex + .5 - pieceScale / 2), squareSize * pieceScale, squareSize * pieceScale);
+						}
+					}
+					
+					if (selectedPiece && highlightMoves[rowIndex + colIndex * 8]) {
+						//ctx.fillRect(colIndex * squareSize, rowIndex * squareSize, squareSize, squareSize);
+						ctx.beginPath();
+						ctx.arc(squareSize * (colIndex + .5), squareSize * (rowIndex + .5), squareSize * .4, 0, 2 * Math.PI, false);
+						ctx.fillStyle = 'transparent';
+						ctx.fill();
+						ctx.lineWidth = squareSize * .05;
+						ctx.strokeStyle = '#00ff00';
+						ctx.stroke();
+					}
+				});
+			});
+			
+			if (selectedPiece) {
+				const pieceIndex = getPieceIndex(selectedPiece.piece.type, selectedPiece.piece.color);
+				ctx.drawImage(images[pieceIndex], squareSize * (mousePos2.x - pieceScale / 2), squareSize * (mousePos2.y - pieceScale / 2), squareSize * pieceScale, squareSize * pieceScale);
+			}
+			
+		}
+
+		//Returns the name of each of the chess piece images
+		function getPieceImage(type, color) {
+			const colorPrefix = color === 'white' ? 'White' : 'Black';
+			const pieceName = type.toUpperCase();
+			return `Images/${type}_${color}.png`;
+		}
+		
+		function getPieceIndex(type, color) {
+			return "rhbqkp".search(type) + (color == "white" ? 0 : 6);
+		}
+
+		function handleSquarePress(rowIndex, colIndex, board) {
+			// Select a piece if the current player's piece is clicked
+			selectPiece(rowIndex, colIndex, board);
+		}
+
+		function handleSquareRelease(rowIndex, colIndex, board) {
+			// Make sure a piece is already selected
+			if (selectedPiece) {
+				
+				// Check if the clicked square is different from the selected piece's position
+				if (selectedPiece.rowIndex !== rowIndex || selectedPiece.colIndex !== colIndex) {
+					movePiece(rowIndex, colIndex, board);
+					selectedPiece = null;
+				} else {
+					// Deselect the piece if the same square is clicked again
+					selectedPiece = null;
+				}
+			}
+		}
+
+		function selectPiece(rowIndex, colIndex, board) {
+			const piece = board[rowIndex][colIndex];
+
+			if (piece && ((currentPlayer === 'white' && piece.color === 'white') || 
+						  (currentPlayer === 'black' && piece.color === 'black'))) {
+				selectedPiece = { rowIndex, colIndex, piece };
+			}
+		}
+		
+		function checkValidMove(toRow, toCol, board) {
+			// Check the type of the selected piece and validate the move accordingly
+			switch (selectedPiece.piece.type) {
+				case 'p': // Pawn
+					return pawnMoves(selectedPiece.rowIndex, selectedPiece.colIndex, toRow, toCol, board, selectedPiece.piece.color);
+				case 'r': // Rook
+					return rookMoves(selectedPiece.rowIndex, selectedPiece.colIndex, toRow, toCol, board);
+				case 'h': // Knight
+					return knightMoves(selectedPiece.rowIndex, selectedPiece.colIndex, toRow, toCol, board);
+				case 'b': // Bishop
+					return bishopMoves(selectedPiece.rowIndex, selectedPiece.colIndex, toRow, toCol, board);
+				case 'q': // Queen
+					return queenMoves(selectedPiece.rowIndex, selectedPiece.colIndex, toRow, toCol, board);
+				case 'k': // King
+					return kingMoves(selectedPiece.rowIndex, selectedPiece.colIndex, toRow, toCol, board);
+				default:
+					return false;
+			}
+		}
+		
+		function movePiece(toRow, toCol, board) {
+			if (!selectedPiece) return;
+
+			let validMove = checkValidMove(toRow, toCol, board);
+
+			// Check the type of the selected piece and validate the move accordingly
+			switch (selectedPiece.piece.type) {
+				case 'p': // Pawn
+					validMove = pawnMoves(selectedPiece.rowIndex, selectedPiece.colIndex, toRow, toCol, board, selectedPiece.piece.color);
+					break;
+				case 'r': // Rook
+					validMove = rookMoves(selectedPiece.rowIndex, selectedPiece.colIndex, toRow, toCol, board);
+					break;
+				case 'h': // Knight
+					validMove = knightMoves(selectedPiece.rowIndex, selectedPiece.colIndex, toRow, toCol, board);
+					break;
+				case 'b': // Bishop
+					validMove = bishopMoves(selectedPiece.rowIndex, selectedPiece.colIndex, toRow, toCol, board);
+					break;
+				case 'q': // Queen
+					validMove = queenMoves(selectedPiece.rowIndex, selectedPiece.colIndex, toRow, toCol, board);
+					break;
+				case 'k': // King
+					validMove = kingMoves(selectedPiece.rowIndex, selectedPiece.colIndex, toRow, toCol, board);
+					break;
+				default:
+					validMove = false;
+			}
+
+			if (validMove) {
+				// Move the piece and update its 'moved' status
+				board[toRow][toCol] = { ...selectedPiece.piece, moved: true };
+				board[selectedPiece.rowIndex][selectedPiece.colIndex] = null;
+				selectedPiece = null; // Deselect piece after moving
+
+				// Change the turn
+				currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+
+				// Re-render the board
+				renderChessBoard(board);
+
+				// If it's AI's turn, call the AI move function
+				if (currentPlayer === 'white') {
+					// Invoke AI move (assuming black is controlled by AI)
+					aiMove(board);
+				}
+			}
+		}
+
+
+		function pawnMoves(fromRow, fromCol, toRow, toCol, board, pawnColor) {
+			let direction = pawnColor === 'white' ? 1 : -1;  // 'white' pawns move down (+1), 'black' pawns move up (-1)
+			let startRow = pawnColor === 'white' ? 1 : 6;    // Starting rows for white (1) and black (6) pawns
+
+			// Move one square forward
+			if (toRow === fromRow + direction && toCol === fromCol && board[toRow][toCol] === null) {
+				return true;
+			}
+
+			// Move two squares forward from the starting position
+			if (fromRow === startRow && toRow === fromRow + 2 * direction && toCol === fromCol && board[toRow][toCol] === null && board[fromRow + direction][toCol] === null) {
+				return true;
+			}
+
+			// Capture diagonally
+			if (toRow === fromRow + direction && (toCol === fromCol + 1 || toCol === fromCol - 1) && board[toRow][toCol] !== null && board[toRow][toCol].color !== pawnColor) {
+				return true;
+			}
+
+			return false;  // If none of the above conditions are met, the move is not valid
+		}
+
+		function rookMoves(fromRow, fromCol, toRow, toCol, board) {
+			// Rooks move either horizontally or vertically, not diagonally
+			if (fromRow !== toRow && fromCol !== toCol) {
+				return false;
+			}
+
+			// Determine the direction of movement
+			const rowDirection = toRow > fromRow ? 1 : toRow < fromRow ? -1 : 0;
+			const colDirection = toCol > fromCol ? 1 : toCol < fromCol ? -1 : 0;
+
+			// Check each square along the path for any obstructions
+			let checkRow = fromRow + rowDirection;
+			let checkCol = fromCol + colDirection;
+			while (checkRow !== toRow || checkCol !== toCol) {
+				if (board[checkRow][checkCol] !== null) {
+					return false;  // Path is obstructed
+				}
+				checkRow += rowDirection;
+				checkCol += colDirection;
+			}
+
+			// Destination square check (to ensure not capturing a piece of the same color)
+			if (board[toRow][toCol] !== null && board[toRow][toCol].color === board[fromRow][fromCol].color) {
+				return false;  // Cannot capture a piece of the same color
+			}
+
+			return true; // Valid move
+		}
+
+
+		function knightMoves(fromRow, fromCol, toRow, toCol, board) {
+			const rowDistance = Math.abs(fromRow - toRow);
+			const colDistance = Math.abs(fromCol - toCol);
+
+			// Check if the move is L-shaped (2 squares in one direction and 1 square in the perpendicular direction)
+			if ((rowDistance === 2 && colDistance === 1) || (rowDistance === 1 && colDistance === 2)) {
+				// Check if the destination square is either empty or occupied by an opponent's piece
+				if (board[toRow][toCol] === null || board[toRow][toCol].color !== board[fromRow][fromCol].color) {
+					return true; // Valid move
+				}
+			}
+
+			return false; // If none of the above conditions are met, the move is not valid
+		}
+
+
+		function bishopMoves(fromRow, fromCol, toRow, toCol, board) {
+			// Bishops must move diagonally: the number of rows and columns they move must be equal
+			if (Math.abs(fromRow - toRow) !== Math.abs(fromCol - toCol)) {
+				return false;
+			}
+
+			// Determine the direction of the movement
+			const rowDirection = toRow > fromRow ? 1 : -1;
+			const colDirection = toCol > fromCol ? 1 : -1;
+
+			// Check each square along the diagonal for any obstructions
+			let checkRow = fromRow + rowDirection;
+			let checkCol = fromCol + colDirection;
+			while (checkRow !== toRow && checkCol !== toCol) {
+				if (board[checkRow][checkCol] !== null) {
+					return false;  // Path is obstructed
+				}
+				checkRow += rowDirection;
+				checkCol += colDirection;
+			}
+
+			// Destination square check (to ensure not capturing a piece of the same color)
+			if (board[toRow][toCol] !== null && board[toRow][toCol].color === board[fromRow][fromCol].color) {
+				return false;  // Cannot capture a piece of the same color
+			}
+
+			return true; // Valid move
+		}
+
+
+		function queenMoves(fromRow, fromCol, toRow, toCol, board) {
+			// A queen's move is valid if it is valid for either a rook or a bishop
+			return rookMoves(fromRow, fromCol, toRow, toCol, board) || 
+				   bishopMoves(fromRow, fromCol, toRow, toCol, board);
+		}
+
+
+		function kingMoves(fromRow, fromCol, toRow, toCol, board) {
+			// The king moves only 1 square in any direction
+			const rowDistance = Math.abs(fromRow - toRow);
+			const colDistance = Math.abs(fromCol - toCol);
+
+			if (rowDistance <= 1 && colDistance <= 1) {
+				// Ensure the destination is either empty or occupied by an opponent's piece
+				if (board[toRow][toCol] === null || board[toRow][toCol].color !== board[fromRow][fromCol].color) {
+					return true; // Valid move
+				}
+			}
+
+			return false; // If not a valid move
+		}
+
+		function aiMove(board) {
+			let bestEval = -Infinity;
+			let bestMove = null;
+			let allMoves = getAllPossibleMoves(board, 'white');
+
+			if (allMoves.length === 0) {
+				console.log("No available moves for AI");
+				return;
+			}
+
+			for (let move of allMoves) {
+				let newBoard = makeMove(board, move);
+				let eval = -1 * minimax(newBoard, 3, false);  // Adjust depth as necessary
+				if (eval > bestEval) {
+					bestEval = eval;
+					bestMove = move;
+				}
+			}
+
+			if (bestMove) {
+				executeMove(bestMove, board);
+				currentPlayer = 'black';
+				renderChessBoard(board);
+			} else {
+				console.error("AI failed to find a valid move.");
+			}
+		}
+
+
+		function handlePlayerMove(move, board) {
+			executeMove(move, board);
+
+			// Switch turn and re-render
+			currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+			renderChessBoard(board);
+
+			// If it's now the AI's turn, call the AI move function
+			if (currentPlayer === 'white') {
+				aiMove(board);
+			}
+		}
+
+		function getAllPossibleMoves(board, color) {
+			let allMoves = [];
+			board.forEach((row, rowIndex) => {
+				row.forEach((cell, colIndex) => {
+					if (cell && cell.color === color) {
+						switch (cell.type) {
+							case 'p':
+								addValidMovesPawn(rowIndex, colIndex, board, allMoves, color);
+								break;
+							case 'h':
+								addValidMovesKnight(rowIndex, colIndex, board, allMoves);
+								break;
+							case 'b':
+								addValidMovesBishop(rowIndex, colIndex, board, allMoves);
+								break;
+							case 'r':
+								addValidMovesRook(rowIndex, colIndex, board, allMoves);
+								break;
+							case 'q':
+								addValidMovesQueen(rowIndex, colIndex, board, allMoves);
+								break;
+							case 'k':
+								addValidMovesKing(rowIndex, colIndex, board, allMoves);
+								break;
+						}
+					}
+				});
+			});
+			return allMoves;
+		}
+
+		function addValidMovesPawn(row, col, board, validMoves, pawnColor) {
+			const direction = pawnColor === 'white' ? 1 : -1;  // White pawns move up (-1), black pawns move down (+1)
+			const startRow = pawnColor === 'white' ? 1 : 6;   // Starting rows for white and black pawns
+
+			// Move one square forward
+			if (pawnMoves(row, col, row + direction, col, board, pawnColor)) {
+				validMoves.push({ fromRow: row, fromCol: col, toRow: row + direction, toCol: col, piece: board[row][col] });
+			}
+
+			// Move two squares forward from the starting position
+			if (row === startRow && pawnMoves(row, col, row + 2 * direction, col, board, pawnColor)) {
+				validMoves.push({ fromRow: row, fromCol: col, toRow: row + 2 * direction, toCol: col, piece: board[row][col] });
+			}
+
+			// Capture diagonally to the left and right
+			[1, -1].forEach(offset => {
+				const newRow = row + direction;
+				const newCol = col + offset;
+				if (newCol >= 0 && newCol < 8 && pawnMoves(row, col, newRow, newCol, board, pawnColor)) {
+					validMoves.push({ fromRow: row, fromCol: col, toRow: newRow, toCol: newCol, piece: board[row][col] });
+				}
+			});
+		}
+
+
+		function addValidMovesRook(row, col, board, validMoves) {
+			// Check all vertical and horizontal moves
+			const directions = [
+				{ dr: -1, dc: 0 }, // Up
+				{ dr: 1, dc: 0 },  // Down
+				{ dr: 0, dc: -1 }, // Left
+				{ dr: 0, dc: 1 }   // Right
+			];
+
+			directions.forEach(direction => {
+				let newRow = row + direction.dr;
+				let newCol = col + direction.dc;
+				while (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+					if (rookMoves(row, col, newRow, newCol, board)) {
+						validMoves.push({ fromRow: row, fromCol: col, toRow: newRow, toCol: newCol, piece: board[row][col] });
+						if (board[newRow][newCol] !== null) {
+							// Stop if a piece is captured
+							break;
+						}
+					} else {
+						// Stop if the path is obstructed or move is not valid
+						break;
+					}
+					newRow += direction.dr;
+					newCol += direction.dc;
+				}
+			});
+		}
+
+		function addValidMovesKnight(row, col, board, validMoves) {
+			// A knight moves in an L-shape: two squares in one direction and then one square perpendicular to that.
+			const knightPlays = [
+				{ dr: -2, dc: -1 }, { dr: -2, dc: 1 },
+				{ dr: -1, dc: -2 }, { dr: -1, dc: 2 },
+				{ dr: 1, dc: -2 },  { dr: 1, dc: 2 },
+				{ dr: 2, dc: -1 },  { dr: 2, dc: 1 }
+			];
+
+			knightPlays.forEach(move => {
+				const newRow = row + move.dr;
+				const newCol = col + move.dc;
+				if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+					if (knightMoves(row, col, newRow, newCol, board)) {
+						validMoves.push({ fromRow: row, fromCol: col, toRow: newRow, toCol: newCol, piece: board[row][col] });
+					}
+				}
+			});
+		}
+
+		function addValidMovesBishop(row, col, board, validMoves) {
+			// Bishops move diagonally, so check all four diagonal directions
+			const directions = [
+				{ dr: -1, dc: -1 }, // Up-left
+				{ dr: -1, dc: 1 },  // Up-right
+				{ dr: 1, dc: -1 },  // Down-left
+				{ dr: 1, dc: 1 }    // Down-right
+			];
+
+			directions.forEach(direction => {
+				let newRow = row + direction.dr;
+				let newCol = col + direction.dc;
+				while (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+					if (bishopMoves(row, col, newRow, newCol, board)) {
+						validMoves.push({ fromRow: row, fromCol: col, toRow: newRow, toCol: newCol, piece: board[row][col] });
+						if (board[newRow][newCol] !== null) {
+							// Bishop can't move past other pieces
+							break;
+						}
+					} else {
+						// Stop if the path is obstructed or the move is not valid
+						break;
+					}
+					newRow += direction.dr;
+					newCol += direction.dc;
+				}
+			});
+		}
+
+		function addValidMovesQueen(row, col, board, validMoves) {
+			// Add all valid rook moves (horizontal and vertical)
+			addValidMovesRook(row, col, board, validMoves);
+
+			// Add all valid bishop moves (diagonal)
+			addValidMovesBishop(row, col, board, validMoves);
+		}
+
+
+		function addValidMovesKing(row, col, board, validMoves) {
+			// The king can move one square in any direction
+			const kingPlays = [
+				{ dr: -1, dc: -1 }, { dr: -1, dc: 0 }, { dr: -1, dc: 1 },
+				{ dr: 0, dc: -1 },                    { dr: 0, dc: 1 },
+				{ dr: 1, dc: -1 },  { dr: 1, dc: 0 }, { dr: 1, dc: 1 }
+			];
+
+			kingPlays.forEach(move => {
+				const newRow = row + move.dr;
+				const newCol = col + move.dc;
+				if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+					if (kingMoves(row, col, newRow, newCol, board)) {
+						validMoves.push({ fromRow: row, fromCol: col, toRow: newRow, toCol: newCol, piece: board[row][col] });
+					}
+				}
+			});
+		}
+
+		function executeMove(move, board) {
+			if (!move || !move.hasOwnProperty('fromRow') || !move.hasOwnProperty('toRow')) {
+				console.error("Invalid move object:", move);
+				return;
+			}
+
+			// Move the piece and update the board
+			const { fromRow, fromCol, toRow, toCol, piece } = move;
+			board[toRow][toCol] = piece;
+			board[fromRow][fromCol] = null;
+
+			currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+			renderChessBoard(board);
+		}
+
+
+		function evaluateBoard(board) {
+			let score = 0;
+			for (let row of board) {
+				for (let cell of row) {
+					if (cell) {
+						// Pawn: 1 point, Knight/Bishop: 3 points, Rook: 5 points, Queen: 9 points, King: 100 points
+						const pieceValue = { p: 1, h: 3, b: 3, r: 5, q: 9, k: 20 };
+						score += (cell.color === 'white' ? 1 : -1) * pieceValue[cell.type];
+					}
+				}
+			}
+			return score;
+		}
+
+
+		function minimax(board, depth, isMaximizingPlayer) {
+			if (depth === 0) {
+				return evaluateBoard(board);
+			}
+
+			if (isMaximizingPlayer) {
+				let maxEval = -Infinity;
+				let allMoves = getAllPossibleMoves(board, 'white');
+				for (let move of allMoves) {
+					let newBoard = makeMove(board, move);
+					let eval = -1 * minimax(newBoard, depth - 1, false);  // Decrease depth for minimizing player
+					maxEval = Math.max(maxEval, eval);
+				}
+				return maxEval;
+
+			} else {
+				let minEval = Infinity;
+				let allMoves = getAllPossibleMoves(board, 'black');
+				for (let move of allMoves) {
+					let newBoard = makeMove(board, move);
+					let eval = minimax(newBoard, depth - 1, true);  // Decrease depth for maximizing player
+					minEval = Math.min(minEval, eval);
+				}
+				return -1 * minEval;
+			}
+		}
+
+		function makeMove(board, move) {
+			// Create a deep copy of the board
+			let newBoard = JSON.parse(JSON.stringify(board));
+
+			// Extract move details
+			const { fromRow, fromCol, toRow, toCol } = move;
+
+			// Move the piece
+			newBoard[toRow][toCol] = newBoard[fromRow][fromCol];
+			newBoard[fromRow][fromCol] = null;
+
+			return newBoard;
+		}
+
+		updateCanvas();
+
+		window.addEventListener("resize", updateCanvas);
+		
+		document.addEventListener('mousemove', (event) => {
+			mousePos = {
+				x: event.clientX,
+				y: event.clientY,
+			}
+		});
+		
+		document.addEventListener('mousedown', (event) => {
+			mouseDrag = true;
+			mouseChange = true;
+		});
+		
+		document.addEventListener('mouseup', (event) => {
+			mouseDrag = false;
+			mouseChange = true;
+		});
+		
+	</script>
+</body>
+</html>
